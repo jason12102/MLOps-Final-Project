@@ -1,6 +1,6 @@
 # Data Versioning — diabetes.csv
 
-Three DVC-tracked snapshots of the Pima Indians Diabetes dataset, each pinned to a git tag. The actual CSV is stored in the Google Drive DVC remote; git only tracks the `.dvc` pointer.
+Three versions of the Pima Indians Diabetes dataset, each tracked by DVC and pinned to a git tag.
 
 ## Versions
 
@@ -10,33 +10,41 @@ Three DVC-tracked snapshots of the Pima Indians Diabetes dataset, each pinned to
 | `v2-cleaned`  | `v1` with zeros in `Glucose, BloodPressure, SkinThickness, Insulin, BMI` replaced by column median. | `scripts/clean.py`         |
 | `v3-features` | `v2` + `BMI_category`, `Age_group`, `Glucose_BMI` (= Glucose × BMI).                               | `scripts/features.py`      |
 
-The scripts overwrite `diabetes.csv` in place — they're meant to be run in
-sequence against a DVC checkout, not as a standalone pipeline.
+The scripts overwrite `diabetes.csv` in place. Run them in sequence against the raw file to reproduce v2 and v3.
 
-## Switching between versions (teammates)
+## How a teammate reproduces all three versions on their laptop
+
+The DVC remote in this repo is a folder on the original author's machine, so `dvc pull` won't work for you. Instead, regenerate the versions locally from the raw CSV — the scripts are deterministic, so you'll get byte-identical output.
+
+```bash
+# 1. clone and enter the repo
+git clone <repo-url>
+cd MLOps-Final-Project
+
+# 2. install dependencies
+pip install pandas numpy dvc
+
+# 3. drop the original Kaggle file at data_versioning/diabetes.csv
+#    (get it from Kaggle: Pima Indians Diabetes Database)
+#    -> this is your v1-raw
+
+# 4. produce v2-cleaned
+python data_versioning/scripts/clean.py
+
+# 5. produce v3-features
+python data_versioning/scripts/features.py
+```
+
+After step 3 you have v1, after step 4 you have v2, after step 5 you have v3. To inspect any earlier version, restart from step 3 with a fresh copy of the raw CSV and stop at the appropriate step.
+
+## How the version history is recorded in git
+
+Each version is a git tag pointing to a commit that holds the matching `data_versioning/diabetes.csv.dvc` pointer (md5 + size of that version's CSV):
 
 ```bash
 git fetch --tags
-git checkout v2-cleaned        # or v1-raw / v3-features
-dvc pull                       # downloads the matching CSV from Drive
+git log --oneline --decorate | grep -E "v1-raw|v2-cleaned|v3-features"
+git show v2-cleaned:data_versioning/diabetes.csv.dvc   # see the recorded hash
 ```
 
-Once a version's data is in the local DVC cache, `dvc checkout` is enough on
-subsequent switches (no network).
-
-## Access required
-
-To use this module you need **both**:
-
-1. **GitHub collaborator** access to this repo — for the code, the `.dvc`
-   pointer files, and the version tags.
-2. **Google Drive "Editor"** access to the DVC remote folder — for the actual
-   data blobs. Without this, `dvc pull` will fail with a permission error.
-
-## Colab usage
-
-```bash
-!pip install -q "dvc[gdrive]"
-!git clone <repo-url> && cd MLOps-Final-Project && git checkout v2-cleaned
-!dvc pull   # first run opens a Google OAuth flow — use the account with Editor access
-```
+If a shared DVC remote is configured in the future, `git checkout <tag> && dvc pull` will materialize the exact CSV for that tag.
