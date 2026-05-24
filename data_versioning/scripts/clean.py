@@ -6,11 +6,16 @@ CSV = Path(__file__).resolve().parents[1] / "diabetes.csv"
 ZERO_AS_MISSING = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
 
 
-def main() -> None:
-    df = pd.read_csv(CSV)
+def clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
     for col in ZERO_AS_MISSING:
         median = df.loc[df[col] != 0, col].median()
         df.loc[df[col] == 0, col] = median
+    return df
+
+
+def main() -> None:
+    df = clean_df(pd.read_csv(CSV))
     df.to_csv(CSV, index=False)
     print(f"cleaned {CSV} — imputed columns: {ZERO_AS_MISSING}")
 

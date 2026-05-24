@@ -12,6 +12,24 @@ Three versions of the Pima Indians Diabetes dataset, each tracked by DVC and pin
 
 The scripts overwrite `diabetes.csv` in place. Run them in sequence against the raw file to reproduce v2 and v3.
 
+## Quickstart for teammates (all 3 versions in one command)
+
+If you just want to inspect or compare v1, v2, and v3 side-by-side without juggling DVC tags:
+
+```bash
+pip install pandas numpy
+# drop the raw Kaggle file at data_versioning/diabetes.csv
+python data_versioning/scripts/build_all.py
+```
+
+This writes all three CSVs to `data_versioning/outputs/` (gitignored):
+
+- `diabetes_v1_raw.csv`
+- `diabetes_v2_cleaned.csv`
+- `diabetes_v3_features.csv`
+
+The per-step workflow below is still the canonical way to reproduce the DVC-tagged history.
+
 ## How a teammate reproduces all three versions on their laptop
 
 The DVC remote in this repo is a folder on the original author's machine, so `dvc pull` won't work for you. Instead, regenerate the versions locally from the raw CSV — the scripts are deterministic, so you'll get byte-identical output.
