@@ -8,11 +8,11 @@ services:
       - "54321:54321"   # H2O Flow UI
       - "8888:8888"     # Jupyter Lab
     volumes:
-      # Mount notebooks folder so edits persist outside the container
+      # Versioned CSVs from the repo — read-only
+      - ../data_versioning/outputs:/app/data_versioning/outputs:ro
+      # Notebooks folder — editable
       - ./notebooks:/app/notebooks
-      # Mount results folder so saved models/leaderboards persist
+      # Results persist outside the container
       - ./results:/app/h2o_automl_results
-    environment:
-      - JAVA_OPTS=-Xmx4g
     mem_limit: 6g
     restart: unless-stopped
