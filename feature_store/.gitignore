@@ -1,0 +1,3 @@
+feature_repo/data/*.db
+feature_repo/data/*.parquet
+**/__pycache__/
