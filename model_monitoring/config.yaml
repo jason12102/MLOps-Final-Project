@@ -1,0 +1,35 @@
+model_serving:
+  url: "http://model-serving:8000"
+  predict_endpoint: "/predict"
+  batch_endpoint: "/predict/batch"
+  health_endpoint: "/health"
+
+reference_data:
+  path: "/app/data/diabetes_v3_features.csv"
+
+target_column: "Outcome"
+
+feature_columns:
+  numerical:
+    - Pregnancies
+    - Glucose
+    - BloodPressure
+    - SkinThickness
+    - Insulin
+    - BMI
+    - DiabetesPedigreeFunction
+    - Age
+    - Glucose_BMI
+  categorical:
+    - BMI_category
+    - Age_group
+
+monitoring:
+  drift_threshold: 0.1
+  performance_threshold:
+    accuracy: 0.75
+    auc: 0.75
+  report_output_dir: "/app/workspace"
+
+schedule:
+  interval_minutes: 60

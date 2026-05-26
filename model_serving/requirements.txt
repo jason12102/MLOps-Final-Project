@@ -1,0 +1,11 @@
+# FastAPI and server
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.0
+
+# H2O for model loading and inference
+h2o==3.46.0.10
+
+# Data processing
+pandas==2.2.3
+numpy==1.26.4

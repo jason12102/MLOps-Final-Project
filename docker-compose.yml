@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  model-serving:
+    build:
+      context: ./model_serving
+      dockerfile: Dockerfile
+    container_name: diabetes-model-serving
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/model/GBM_1_AutoML_3_20260525_194002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - diabetes-network
+
+  monitoring:
+    build:
+      context: ./model_monitoring
+      dockerfile: Dockerfile
+    container_name: diabetes-monitoring
+    volumes:
+      - ./model_monitoring/workspace:/app/workspace
+      - ./data_versioning/outputs:/app/data:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      model-serving:
+        condition: service_healthy
+    networks:
+      - diabetes-network
+
+  monitoring-ui:
+    image: python:3.11-slim
+    container_name: diabetes-monitoring-ui
+    working_dir: /app
+    command: >
+      bash -c "pip install -q 'evidently[ui]==0.4.33' && evidently ui --host 0.0.0.0 --port 8001 --workspace /app/workspace"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./model_monitoring/workspace:/app/workspace
+    depends_on:
+      - monitoring
+    restart: unless-stopped
+    networks:
+      - diabetes-network
+
+networks:
+  diabetes-network:
+    driver: bridge

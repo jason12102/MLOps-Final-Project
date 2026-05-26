@@ -2,13 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Evidently UI
-RUN pip install --no-cache-dir "evidently[ui]"
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create workspace directory
-RUN mkdir -p /app/workspace
+RUN mkdir -p /app/workspace /app/data
 
-EXPOSE 8000
+COPY config.yaml /app/config.yaml
+COPY src/ /app/
 
-# Start Evidently UI
-CMD ["evidently", "ui", "--host", "0.0.0.0", "--port", "8000", "--workspace", "/app/workspace"]
+EXPOSE 8001
+
+CMD ["python", "main.py", "--mode", "wait-and-run"]
