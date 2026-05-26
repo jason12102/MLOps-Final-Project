@@ -16,6 +16,7 @@ Usage:
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,9 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+from evidently import Dataset, DataDefinition, BinaryClassification, Report
+from evidently.presets import DataDriftPreset, DataSummaryPreset
+from evidently.ui.workspace import Workspace
 
 API_URL = "http://localhost:8000"
 DATA_PATH = Path(__file__).parent.parent / "data_versioning" / "diabetes.csv"
@@ -43,6 +47,13 @@ AGE_LABELS = ["20s", "30s", "40s", "50s", "60+"]
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add engineered features to match model expectations."""
     df = df.copy()
+    
+    # Replace zeros with median for columns where 0 is invalid (missing value indicator)
+    cols_with_zeros = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
+    for col in cols_with_zeros:
+        median_val = df.loc[df[col] > 0, col].median()
+        df[col] = df[col].replace(0, median_val)
+    
     df["BMI_category"] = pd.cut(df["BMI"], bins=BMI_BINS, labels=BMI_LABELS, right=False).astype(str)
     df["Age_group"] = pd.cut(df["Age"], bins=AGE_BINS, labels=AGE_LABELS).astype(str)
     df["Glucose_BMI"] = df["Glucose"] * df["BMI"]
@@ -112,9 +123,8 @@ def print_metrics(metrics: dict, title: str):
 
 def create_modified_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Create modified test data by:
-    1. Swapping Glucose and BloodPressure values
-    2. Adding noise to BMI values
+    Create modified test data with aggressive drift to trigger detection.
+    Applies modifications to majority of columns to exceed 0.5 drift threshold.
     """
     modified = df.copy()
     
@@ -125,9 +135,25 @@ def create_modified_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Glucose"].values.copy()
     )
     
-    # Modification 2: Multiply Insulin by 2 (simulate measurement change)
-    print("  [MOD 2] Doubling Insulin values (simulating sensor drift)")
-    modified["Insulin"] = df["Insulin"] * 2
+    # Modification 2: Multiply Insulin by 3x (more aggressive)
+    print("  [MOD 2] Tripling Insulin values (simulating sensor drift)")
+    modified["Insulin"] = df["Insulin"] * 3
+    
+    # Modification 3: Shift BMI distribution significantly
+    print("  [MOD 3] Shifting BMI by +10 (simulating population change)")
+    modified["BMI"] = df["BMI"] + 10
+    
+    # Modification 4: Increase Age by 15 years
+    print("  [MOD 4] Increasing Age by 15 years (simulating demographic shift)")
+    modified["Age"] = df["Age"] + 15
+    
+    # Modification 5: Double SkinThickness
+    print("  [MOD 5] Doubling SkinThickness values")
+    modified["SkinThickness"] = df["SkinThickness"] * 2
+    
+    # Modification 6: Shift Pregnancies
+    print("  [MOD 6] Adding 2 to Pregnancies count")
+    modified["Pregnancies"] = df["Pregnancies"] + 2
     
     # Recalculate derived features with modified values
     modified["Glucose_BMI"] = modified["Glucose"] * modified["BMI"]
@@ -203,7 +229,7 @@ def run_modified_data(original_test_df: pd.DataFrame = None):
     
     # Show what changed
     print("\nFeature distribution changes:")
-    for col in ["Glucose", "BloodPressure", "Insulin"]:
+    for col in ["Glucose", "BloodPressure", "Insulin", "BMI", "Age", "SkinThickness", "Pregnancies"]:
         orig_mean = original_test_df[col].mean()
         mod_mean = modified_df[col].mean()
         print(f"  {col:20}: {orig_mean:8.2f} -> {mod_mean:8.2f} (delta: {mod_mean - orig_mean:+.2f})")
@@ -301,6 +327,84 @@ def save_for_monitoring(original_df: pd.DataFrame, modified_df: pd.DataFrame):
     print("  - current_data.csv (active - set to modified for demo)")
 
 
+def create_evidently_reports(
+    reference_df: pd.DataFrame, 
+    current_df: pd.DataFrame,
+    ref_predictions: pd.DataFrame,
+    curr_predictions: pd.DataFrame,
+):
+    """Create Evidently reports and save to workspace for UI."""
+    print("\n" + "="*60)
+    print("  Creating Evidently Reports for UI")
+    print("="*60)
+    
+    workspace_path = Path(__file__).parent.parent / "model_monitoring" / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    
+    ws = Workspace.create(str(workspace_path))
+    
+    project_name = "Diabetes Model Monitoring"
+    existing_projects = [p for p in ws.list_projects() if p.name == project_name]
+    
+    if existing_projects:
+        project = existing_projects[0]
+        print(f"  Using existing project: {project_name}")
+    else:
+        project = ws.create_project(project_name)
+        project.description = "Monitoring diabetes prediction model for data drift and performance"
+        project.save()
+        print(f"  Created new project: {project_name}")
+    
+    # Prepare reference data with predictions
+    ref_data = reference_df.copy()
+    ref_data["prediction"] = ref_predictions["prediction"].values
+    ref_data["prob_diabetes"] = ref_predictions["prob_diabetes"].values
+    
+    # Prepare current data with predictions  
+    curr_data = current_df.copy()
+    curr_data["prediction"] = curr_predictions["prediction"].values
+    curr_data["prob_diabetes"] = curr_predictions["prob_diabetes"].values
+    
+    # Define data schema for Evidently 0.7+
+    data_definition = DataDefinition(
+        numerical_columns=[
+            "Pregnancies", "Glucose", "BloodPressure", "SkinThickness",
+            "Insulin", "BMI", "DiabetesPedigreeFunction", "Age", "Glucose_BMI"
+        ],
+        categorical_columns=["BMI_category", "Age_group"],
+        classification=[BinaryClassification(target="Outcome", prediction_labels="prediction")],
+    )
+    
+    # Create datasets
+    ref_dataset = Dataset.from_pandas(ref_data, data_definition=data_definition)
+    curr_dataset = Dataset.from_pandas(curr_data, data_definition=data_definition)
+    
+    # Create CONTROL report (reference vs reference - no drift expected)
+    print("  Generating Control Report (reference vs reference)...")
+    control_report = Report([DataDriftPreset()])
+    control_snapshot = control_report.run(reference_data=ref_dataset, current_data=ref_dataset)
+    ws.add_run(project.id, control_snapshot, name="[CONTROL] Baseline - No Drift Expected")
+    
+    # Create Data Drift Report (reference vs modified - drift expected)
+    print("  Generating Data Drift Report (reference vs modified)...")
+    drift_report = Report([DataDriftPreset()])
+    drift_snapshot = drift_report.run(reference_data=ref_dataset, current_data=curr_dataset)
+    ws.add_run(project.id, drift_snapshot, name="[DRIFT] Modified Data - Drift Detected")
+    
+    # Create Data Summary Report for modified data
+    print("  Generating Data Summary Report...")
+    summary_report = Report([DataSummaryPreset()])
+    summary_snapshot = summary_report.run(reference_data=ref_dataset, current_data=curr_dataset)
+    ws.add_run(project.id, summary_snapshot, name="[SUMMARY] Data Statistics Comparison")
+    
+    print(f"\n  Reports saved to Evidently UI!")
+    print(f"  Open http://localhost:8001 to view the reports")
+    print(f"  Reports tagged:")
+    print(f"    - [CONTROL] Baseline - No Drift Expected")
+    print(f"    - [DRIFT] Modified Data - Drift Detected")
+    print(f"    - [SUMMARY] Data Statistics Comparison")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Model Validation Demo")
     parser.add_argument(
@@ -324,21 +428,31 @@ def main():
     print("\nAPI Status: HEALTHY")
     
     original_test_df = None
+    original_pred_df = None
     original_metrics = None
-    modified_metrics = None
     modified_df = None
+    modified_pred_df = None
+    modified_metrics = None
     
     if args.step in ["original", "all"]:
-        original_test_df, _, original_metrics = run_original_data()
+        original_test_df, original_pred_df, original_metrics = run_original_data()
     
     if args.step in ["modified", "all"]:
-        modified_df, _, modified_metrics = run_modified_data(original_test_df)
+        modified_df, modified_pred_df, modified_metrics = run_modified_data(original_test_df)
     
     if args.step == "all" and original_metrics and modified_metrics:
         compare_results(original_metrics, modified_metrics)
         
         if original_test_df is not None and modified_df is not None:
             save_for_monitoring(original_test_df, modified_df)
+            
+            # Create Evidently reports for UI
+            create_evidently_reports(
+                reference_df=original_test_df,
+                current_df=modified_df,
+                ref_predictions=original_pred_df,
+                curr_predictions=modified_pred_df,
+            )
     
     print("\nDemo complete!")
 

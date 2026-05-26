@@ -1,6 +1,7 @@
 FROM eclipse-temurin:17-jre-jammy
 
-RUN apt-get update -o Acquire::Retries=3 \
+RUN sed -i 's|http://archive.ubuntu.com|http://mirrors.edge.kernel.org|g' /etc/apt/sources.list \
+    && apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \

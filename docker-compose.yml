@@ -37,11 +37,9 @@ services:
       - diabetes-network
 
   monitoring-ui:
-    image: python:3.11-slim
+    image: evidently/evidently-service:latest
     container_name: diabetes-monitoring-ui
-    working_dir: /app
-    command: >
-      bash -c "pip install -q 'evidently[ui]==0.4.33' && evidently ui --host 0.0.0.0 --port 8001 --workspace /app/workspace"
+    command: ["--host", "0.0.0.0", "--port", "8001", "--workspace", "/app/workspace"]
     ports:
       - "8001:8001"
     volumes:
